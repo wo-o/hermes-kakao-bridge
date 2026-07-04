@@ -1,0 +1,26 @@
+# HTTP + public IP variant (no domain/TLS).
+# Binds 0.0.0.0:80 directly — skill URL: http://<server-public-ip>/kakao/skill
+# WARNING: plaintext HTTP; testing only. For TLS use Caddy + kakao-bridge.service.
+#
+# Runs as the `ubuntu` user — hermes must be installed/authenticated by that
+# same user (bridge reads /home/ubuntu/.hermes). AmbientCapabilities grants
+# port-80 binding without root. If your user differs, adjust User=, PATH, and
+# HERMES_BIN in bridge.env.
+[Unit]
+Description=Hermes <-> KakaoTalk bridge (HTTP, public IP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/kakao-bridge
+EnvironmentFile=/opt/kakao-bridge/bridge.env
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ExecStart=/opt/kakao-bridge/venv/bin/uvicorn kakao_bridge:app --host 0.0.0.0 --port 80
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

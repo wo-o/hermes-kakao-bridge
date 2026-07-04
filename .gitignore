@@ -1,0 +1,14 @@
+# Secrets — never commit real env files
+bridge.env
+.env
+.env.*
+!bridge.env.example
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# OS
+.DS_Store

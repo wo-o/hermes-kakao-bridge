@@ -1,0 +1,21 @@
+# Host-run, loopback only — front with Caddy (or another TLS proxy) on 443.
+# Runs as the `ubuntu` user — hermes must be installed/authenticated by that
+# same user (bridge reads /home/ubuntu/.hermes). If your user differs, adjust
+# User=, PATH, and HERMES_BIN in bridge.env.
+[Unit]
+Description=Hermes <-> KakaoTalk bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/kakao-bridge
+EnvironmentFile=/opt/kakao-bridge/bridge.env
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/kakao-bridge/venv/bin/uvicorn kakao_bridge:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
