@@ -45,13 +45,13 @@ HERMES_BIN = os.environ.get(
 )  # absolute path recommended in systemd
 HERMES_TIMEOUT = int(
     os.environ.get("HERMES_TIMEOUT", "50")
-)  # seconds; MUST stay under Kakao's callbackUrl expiry (openbuilder: max 5 min)
+)  # seconds; MUST stay under Kakao's callbackUrl expiry (1 min, single-use)
 HERMES_EXTRA_ARGS = shlex.split(
     os.environ.get("HERMES_EXTRA_ARGS", "")
 )  # e.g. "--toolsets safe" to restrict tools for the Kakao channel
 PER_USER_SESSION = (
-    os.environ.get("KAKAO_PER_USER_SESSION", "0") == "1"
-)  # 1 = per-user multi-turn memory
+    os.environ.get("KAKAO_PER_USER_SESSION", "1") == "1"
+)  # 1 = per-user multi-turn memory (default), 0 = stateless one-shot
 WAITING_TEXT = os.environ.get(
     "KAKAO_WAITING_TEXT", "🤔 답변을 작성하고 있어요. 잠시만 기다려 주세요..."
 )
@@ -77,6 +77,9 @@ def _clean(s: str) -> str:
 
 
 async def _run_hermes(utterance: str, user_id: str) -> str:
+    # Prefix the anonymous Kakao user id so hermes can tell users apart in
+    # session context and long-term memory (the id is a bot-scoped hash, not PII).
+    prompt = f"[카카오톡 사용자 {user_id}]\n{utterance}"
     if PER_USER_SESSION:
         # Per-user thread: keeps multi-turn context. `--continue <name>` reuses a named session.
         cmd = [
@@ -84,7 +87,7 @@ async def _run_hermes(utterance: str, user_id: str) -> str:
             "chat",
             "-Q",
             "-q",
-            utterance,
+            prompt,
             "--continue",
             f"kakao-{user_id}",
             *HERMES_EXTRA_ARGS,
@@ -92,7 +95,7 @@ async def _run_hermes(utterance: str, user_id: str) -> str:
     else:
         # Stateless one-shot. `-z` prints ONLY the final response text (cleanest for a chatbot).
         # Hermes' persistent long-term memory still applies across calls.
-        cmd = [HERMES_BIN, "-z", utterance, *HERMES_EXTRA_ARGS]
+        cmd = [HERMES_BIN, "-z", prompt, *HERMES_EXTRA_ARGS]
     LOG.info(
         "hermes invoke (%s) user=%s",
         "session" if PER_USER_SESSION else "oneshot",
