@@ -76,31 +76,11 @@ def _clean(s: str) -> str:
     return s or "응답을 생성하지 못했어요. 다시 시도해 주세요."
 
 
-async def _run_hermes(utterance: str, user_id: str) -> str:
-    # Prefix the anonymous Kakao user id so hermes can tell users apart in
-    # session context and long-term memory (the id is a bot-scoped hash, not PII).
-    prompt = f"[카카오톡 사용자 {user_id}]\n{utterance}"
-    if PER_USER_SESSION:
-        # Per-user thread: keeps multi-turn context. `--continue <name>` reuses a named session.
-        cmd = [
-            HERMES_BIN,
-            "chat",
-            "-Q",
-            "-q",
-            prompt,
-            "--continue",
-            f"kakao-{user_id}",
-            *HERMES_EXTRA_ARGS,
-        ]
-    else:
-        # Stateless one-shot. `-z` prints ONLY the final response text (cleanest for a chatbot).
-        # Hermes' persistent long-term memory still applies across calls.
-        cmd = [HERMES_BIN, "-z", prompt, *HERMES_EXTRA_ARGS]
-    LOG.info(
-        "hermes invoke (%s) user=%s",
-        "session" if PER_USER_SESSION else "oneshot",
-        user_id,
-    )
+_SESSION_ID_RE = re.compile(r"session_id:\s*(\S+)")
+
+
+async def _exec(cmd: list) -> tuple:
+    """Run a hermes command. Returns (rc, stdout, stderr); rc=None on timeout."""
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -113,15 +93,80 @@ async def _run_hermes(utterance: str, user_id: str) -> str:
         LOG.error("hermes timeout after %ss — killing pid=%s", HERMES_TIMEOUT, proc.pid)
         proc.kill()
         await proc.wait()
-        return "응답이 조금 더 걸리고 있어요. 잠시 후 다시 물어봐 주세요."
+        return None, "", ""
     except FileNotFoundError:
         LOG.error("hermes binary not found: %s", HERMES_BIN)
+        return 127, "", ""
+    return (
+        proc.returncode,
+        out.decode(errors="replace"),
+        err.decode(errors="replace"),
+    )
+
+
+async def _run_hermes(utterance: str, user_id: str) -> str:
+    # Prefix the anonymous Kakao user id so hermes can tell users apart in
+    # session context and long-term memory (the id is a bot-scoped hash, not PII).
+    prompt = f"[카카오톡 사용자 {user_id}]\n{utterance}"
+    LOG.info(
+        "hermes invoke (%s) user=%s",
+        "session" if PER_USER_SESSION else "oneshot",
+        user_id,
+    )
+    if not PER_USER_SESSION:
+        # Stateless one-shot. `-z` prints ONLY the final response text (cleanest for a chatbot).
+        # Hermes' persistent long-term memory still applies across calls.
+        rc, out, err = await _exec([HERMES_BIN, "-z", prompt, *HERMES_EXTRA_ARGS])
+        if rc is None:
+            return "응답이 조금 더 걸리고 있어요. 잠시 후 다시 물어봐 주세요."
+        if rc == 127:
+            return "서버 설정 오류(hermes 미발견). 관리자에게 문의해 주세요."
+        if rc != 0:
+            LOG.error("hermes rc=%s err=%s", rc, err[:500])
+        return _clean(out)
+
+    # Per-user thread: `--continue <name>` resumes an EXISTING named session only —
+    # it exits 1 with "No session found" for a first-time user, so create + name
+    # the session on that miss and answer from the fresh run.
+    session_name = f"kakao-{user_id}"
+    rc, out, err = await _exec(
+        [
+            HERMES_BIN,
+            "chat",
+            "-Q",
+            "-q",
+            prompt,
+            "--continue",
+            session_name,
+            *HERMES_EXTRA_ARGS,
+        ]
+    )
+    if rc is None:
+        return "응답이 조금 더 걸리고 있어요. 잠시 후 다시 물어봐 주세요."
+    if rc == 127:
         return "서버 설정 오류(hermes 미발견). 관리자에게 문의해 주세요."
-    if proc.returncode != 0:
-        LOG.error(
-            "hermes rc=%s err=%s", proc.returncode, err.decode(errors="replace")[:500]
+    if rc != 0 and "No session found" in (out + err):
+        LOG.info("no session for %s — creating", session_name)
+        rc, out, err = await _exec(
+            [HERMES_BIN, "chat", "-Q", "-q", prompt, *HERMES_EXTRA_ARGS]
         )
-    return _clean(out.decode(errors="replace"))
+        if rc is None:
+            return "응답이 조금 더 걸리고 있어요. 잠시 후 다시 물어봐 주세요."
+        # `chat -Q` prints "session_id: <id>" to stderr — name it so the next
+        # message's --continue finds it. Best-effort: a failed rename just means
+        # the next message starts a new session instead of crashing.
+        m = _SESSION_ID_RE.search(err)
+        if m:
+            r_rc, _, r_err = await _exec(
+                [HERMES_BIN, "sessions", "rename", m.group(1), session_name]
+            )
+            if r_rc != 0:
+                LOG.error("session rename failed rc=%s err=%s", r_rc, r_err[:300])
+        else:
+            LOG.error("no session_id in hermes stderr — multi-turn will not stick")
+    if rc != 0:
+        LOG.error("hermes rc=%s err=%s", rc, err[:500])
+    return _clean(out)
 
 
 async def _process_and_callback(
