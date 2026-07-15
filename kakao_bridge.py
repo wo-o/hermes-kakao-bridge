@@ -50,8 +50,8 @@ HERMES_EXTRA_ARGS = shlex.split(
     os.environ.get("HERMES_EXTRA_ARGS", "")
 )  # e.g. "--toolsets safe" to restrict tools for the Kakao channel
 PER_USER_SESSION = (
-    os.environ.get("KAKAO_PER_USER_SESSION", "1") == "1"
-)  # 1 = per-user multi-turn memory (default), 0 = stateless one-shot
+    os.environ.get("KAKAO_PER_USER_SESSION", "0") == "1"
+)  # 0 = stateless one-shot (default), 1 = per-user multi-turn memory
 WAITING_TEXT = os.environ.get(
     "KAKAO_WAITING_TEXT", "🤔 답변을 작성하고 있어요. 잠시만 기다려 주세요..."
 )

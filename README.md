@@ -90,6 +90,6 @@ HERMES_HOME=~/.hermes/profiles/kakao hermes -z "너는 누구야?"   # 검증
 | `HERMES_HOME` | `~/.hermes/profiles/kakao` | 카톡 전용 프로파일. 지우면 본체로 응답 |
 | `HERMES_TIMEOUT` | `50` | 초. callbackUrl 유효시간(1분) 내로 — 50 초과 금지 |
 | `HERMES_EXTRA_ARGS` | (없음) | hermes 추가 인자 (예: `--toolsets safe`) |
-| `KAKAO_PER_USER_SESSION` | `1` | 사용자별 멀티턴 세션. `0`이면 stateless 단발 응답 |
+| `KAKAO_PER_USER_SESSION` | `0` | stateless 단발 응답(기본; 매 메시지가 최신 SOUL·스킬 반영). `1`이면 사용자별 멀티턴 세션 |
 | `KAKAO_BRIDGE_SECRET` | (빈 값) | `X-Bridge-Secret` 헤더 검증 |
 | `KAKAO_WAITING_TEXT` | 🤔 답변을... | 즉답 대기 메시지 |
